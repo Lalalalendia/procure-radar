@@ -1,0 +1,2 @@
+# Trusted Sterlitamak customer INNs can be added here as they are verified.
+# One 10- or 12-digit INN per line. Comments start with #.
