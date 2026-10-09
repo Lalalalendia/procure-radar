@@ -289,3 +289,19 @@ def test_purchase_level_locality_recovers_delivery_city_without_customer_address
     assert rows[0]["customer_inn"] == "0278206808"
     assert rows[0]["locality_source"] == "purchase"
     assert rows[0]["locality_confidence"] == 1.0
+
+
+def test_multi_city_delivery_network_is_not_strong_locality_evidence() -> None:
+    payload = {
+        "deliveryPlacesInfo": {
+            "address": (
+                "Поставка ГСМ осуществляется через сети АЗС на территории Республики "
+                "Башкортостан, в том числе г. Уфа, г. Стерлитамак, г. Салават, "
+                "г. Сибай, г. Белорецк"
+            )
+        }
+    }
+    evidence = extract_purchase_locality_evidence(payload, aliases=["Стерлитамак"])
+    assert len(evidence) == 1
+    assert evidence[0]["source"] == "structured_address"
+    assert evidence[0]["confidence"] == 0.65
