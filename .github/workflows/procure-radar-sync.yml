@@ -1,0 +1,154 @@
+name: Procure Radar Sync
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened]
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sync:
+    if: github.event_name != 'issues' || startsWith(github.event.issue.title, '[procure-radar-run]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
+      GOSPLAN_BASE_URL: ${{ secrets.GOSPLAN_BASE_URL || 'https://v2test.gosplan.info' }}
+      GOSPLAN_API_KEY: ${{ secrets.GOSPLAN_API_KEY }}
+      DB_PATH: data/procure_radar.sqlite3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt
+
+      - name: Restore previous SQLite snapshot if available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p data previous
+          run_id="$(gh run list --workflow "procure-radar-sync.yml" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" -n procure-radar-db -D previous || true
+            if [ -f previous/procure_radar.sqlite3 ]; then
+              cp previous/procure_radar.sqlite3 "$DB_PATH"
+            fi
+          fi
+
+      - name: Pull latest Bashkortostan 44-FZ purchases
+        shell: bash
+        run: |
+          args=(
+            ingest-region
+            --region 2
+            --pages 3
+            --limit 50
+            --max-details 20
+            --db "$DB_PATH"
+            --base-url "$GOSPLAN_BASE_URL"
+          )
+          if [ -n "$GOSPLAN_API_KEY" ]; then
+            args+=(--api-key "$GOSPLAN_API_KEY")
+          fi
+          python -m procure_radar.cli "${args[@]}"
+
+      - name: Enrich customer identities for locality filtering
+        shell: bash
+        run: |
+          args=(
+            locality-enrich-identities
+            --region 2
+            --max-requests 50
+            --db "$DB_PATH"
+            --base-url "$GOSPLAN_BASE_URL"
+          )
+          if [ -n "$GOSPLAN_API_KEY" ]; then
+            args+=(--api-key "$GOSPLAN_API_KEY")
+          fi
+          python -m procure_radar.cli "${args[@]}" | tee data/identity-enrichment.txt
+
+      - name: Refresh Sterlitamak customer allowlist
+        run: |
+          python -m procure_radar.cli locality-refresh \
+            --key sterlitamak \
+            --name "Стерлитамак" \
+            --alias "Стерлитамак" \
+            --region 2 \
+            --manual-inn-file config/sterlitamak-customers.txt \
+            --db "$DB_PATH" | tee data/sterlitamak-allowlist-stats.txt
+
+      - name: Export Sterlitamak purchases
+        run: |
+          python -m procure_radar.cli locality-purchases \
+            --key sterlitamak \
+            --min-confidence 0.9 \
+            --limit 2000 \
+            --json-out data/sterlitamak-purchases.json \
+            --csv-out data/sterlitamak-purchases.csv \
+            --db "$DB_PATH" | tee data/sterlitamak-export-stats.txt
+
+      - name: Rank concrete first-money deals
+        run: |
+          python -m procure_radar.cli locality-shortlist \
+            --key sterlitamak \
+            --min-confidence 0.9 \
+            --min-score 55 \
+            --limit 2000 \
+            --json-out data/sterlitamak-deal-shortlist.json \
+            --csv-out data/sterlitamak-deal-shortlist.csv \
+            --md-out data/sterlitamak-deal-shortlist.md \
+            --db "$DB_PATH" | tee data/sterlitamak-deal-shortlist-stats.txt
+          cat data/sterlitamak-deal-shortlist.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build sourcing-ready dossiers for top deals
+        run: |
+          python -m procure_radar.cli locality-dossiers \
+            --key sterlitamak \
+            --min-confidence 0.9 \
+            --min-score 68 \
+            --max-deals 10 \
+            --json-out data/sterlitamak-deal-dossiers.json \
+            --md-out data/sterlitamak-deal-dossiers.md \
+            --db "$DB_PATH" | tee data/sterlitamak-deal-dossiers-stats.txt
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat data/sterlitamak-deal-dossiers.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Emit collection stats
+        run: python -m procure_radar.cli stats --db "$DB_PATH" --limit 10 | tee data/stats.txt
+
+      - name: Save SQLite state
+        uses: actions/upload-artifact@v4
+        with:
+          name: procure-radar-db
+          path: |
+            data/procure_radar.sqlite3
+            data/stats.txt
+            data/identity-enrichment.txt
+            data/sterlitamak-allowlist-stats.txt
+            data/sterlitamak-export-stats.txt
+            data/sterlitamak-purchases.json
+            data/sterlitamak-purchases.csv
+            data/sterlitamak-deal-shortlist.json
+            data/sterlitamak-deal-shortlist.csv
+            data/sterlitamak-deal-shortlist.md
+            data/sterlitamak-deal-shortlist-stats.txt
+            data/sterlitamak-deal-dossiers.json
+            data/sterlitamak-deal-dossiers.md
+            data/sterlitamak-deal-dossiers-stats.txt
+          retention-days: 30
+          if-no-files-found: error
