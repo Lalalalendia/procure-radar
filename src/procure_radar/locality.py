@@ -92,7 +92,19 @@ def extract_purchase_locality_evidence(
                         or "deliveryplacesinfo" in path_tokens
                         or "bygarinfo" in path_tokens
                     ):
-                        add("structured_address", 1.0, value)
+                        # A multi-city service/retail network that merely includes the
+                        # target city is not a city-local procurement. Keep the evidence
+                        # for auditability, but below the strong-locality threshold.
+                        norm_value = _normalize_location_text(value)
+                        multi_location = (
+                            "в том числе" in norm_value
+                            and (norm_value.count(" г ") + norm_value.count("город ")) >= 3
+                        )
+                        add(
+                            "structured_address",
+                            0.65 if multi_location else 1.0,
+                            value,
+                        )
                     elif "oktmo" in joined or "budgetinfo" in path_tokens:
                         add("structured_jurisdiction", 0.99, value)
                     elif token in {
