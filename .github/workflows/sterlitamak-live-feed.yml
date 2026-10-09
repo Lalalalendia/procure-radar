@@ -1,0 +1,49 @@
+name: Sterlitamak Live Feed
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependency
+        run: python -m pip install httpx==0.28.1
+
+      - name: Build live Sterlitamak feed from latest Bashkortostan purchases
+        env:
+          GOSPLAN_BASE_URL: https://v2test.gosplan.info
+        run: python scripts/sterlitamak_live_feed.py
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          echo "## Sterlitamak live feed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`json' >> "$GITHUB_STEP_SUMMARY"
+          cat data/sterlitamak-live-summary.json >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload live feed
+        uses: actions/upload-artifact@v4
+        with:
+          name: sterlitamak-live-feed
+          path: |
+            data/sterlitamak-live-summary.json
+            data/sterlitamak-live-matches.json
+            data/sterlitamak-live-raw-hits.json
+            data/sterlitamak-live-failures.json
+          retention-days: 7
