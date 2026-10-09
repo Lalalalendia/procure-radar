@@ -260,6 +260,8 @@ def score_purchase(
         flags.append("regulated_market")
     if segment_group == "works":
         flags.append("execution_heavy")
+    if segment == "real_estate":
+        flags.append("capital_asset_market")
     if segment == "other":
         flags.append("unclear_segment")
 
@@ -296,6 +298,9 @@ def score_purchase(
         "medical_diagnostics": 68.0,
         "medical_equipment": 72.0,
         "construction_works": 70.0,
+        # Buying/supplying apartments is not a low-capital first-money play.
+        # Keep these visible for manual sourcing, but never auto-pursue them.
+        "real_estate": 64.0,
     }
     if segment in risk_caps:
         score = min(score, risk_caps[segment])
