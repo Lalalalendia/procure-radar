@@ -31,8 +31,11 @@ jobs:
       - name: Replace repository with tested v4 snapshot
         shell: bash
         run: |
+          cp .github/workflows/bootstrap-v4.yml /tmp/bootstrap-v4.yml
           find . -mindepth 1 -maxdepth 1 ! -name .git ! -name bootstrap -exec rm -rf {} +
           tar -xJf /tmp/procure_radar_v4.tar.xz -C .
+          rm -f .github/workflows/procure-radar-sync.yml
+          cp /tmp/bootstrap-v4.yml .github/workflows/bootstrap-v4.yml
           rm -rf bootstrap
 
       - name: Install test dependencies
@@ -48,6 +51,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          rm -rf .pytest_cache
           git add -A
           git diff --cached --quiet && exit 0
           git commit -m "Promote Procure Radar v4 pipeline"
