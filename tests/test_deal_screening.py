@@ -155,3 +155,27 @@ def test_one_day_deadline_is_not_a_first_pick() -> None:
     assert "deadline_risk" in result.review_flags
     assert result.score <= 65
     assert result.decision != "pursue"
+
+
+def test_real_estate_is_manual_review_not_auto_pursue() -> None:
+    result = score_purchase(
+        max_price=3_500_000,
+        collecting_finished_at="2026-10-19T08:00:00+00:00",
+        purchase_type="epNotificationEZK2020",
+        stage=1,
+        doc_types=["epNotificationEZK2020"],
+        locality_confidence=1.0,
+        item_count=1,
+        coded_items=1,
+        quantity_items=1,
+        price_items=1,
+        amount_items=1,
+        segment="real_estate",
+        segment_group="goods",
+        as_of=NOW,
+    )
+    assert "capital_asset_market" in result.review_flags
+    assert result.execution_mode == "manual_review"
+    assert result.score <= 64
+    assert result.tier == "C"
+    assert result.decision == "review"
