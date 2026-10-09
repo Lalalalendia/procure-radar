@@ -36,7 +36,7 @@ jobs:
           rm -rf bootstrap
 
       - name: Install test dependencies
-        run: python -m pip install -r requirements-ci.txt
+        run: python -m pip install -r requirements-ci.txt pytest
 
       - name: Verify snapshot
         env:
