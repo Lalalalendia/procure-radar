@@ -1,0 +1,54 @@
+name: Bootstrap Procure Radar v4
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    if: contains(github.event.head_commit.message, '[bootstrap-v4]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Decode and verify v4 snapshot
+        shell: bash
+        run: |
+          base64 -d bootstrap/procure_radar_v4.tar.xz.b64 > /tmp/procure_radar_v4.tar.xz
+          echo "e550ef49e616536b21796e888831dea60c0122ea92b51e9c2fd05556026c802a  /tmp/procure_radar_v4.tar.xz" | sha256sum -c -
+
+      - name: Replace repository with tested v4 snapshot
+        shell: bash
+        run: |
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name bootstrap -exec rm -rf {} +
+          tar -xJf /tmp/procure_radar_v4.tar.xz -C .
+          rm -rf bootstrap
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-ci.txt
+
+      - name: Verify snapshot
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Commit promoted v4
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Promote Procure Radar v4 pipeline"
+          git push
